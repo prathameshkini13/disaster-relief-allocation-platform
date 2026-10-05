@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ReliefLink – Disaster Relief Resource Allocation Platform</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f5f7fa;--card:#fff;--tx:#1b2430;--mu:#667085;--bd:#e1e6ee;--ac:#d9480f;--ok:#2b8a3e;--wn:#e8590c}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10151c;--card:#19212b;--tx:#e8edf3;--mu:#98a2b3;--bd:#2a3441;--ac:#ff8c5a;--ok:#51cf66;--wn:#ffa94d}}
+:root[data-theme="dark"]{--bg:#10151c;--card:#19212b;--tx:#e8edf3;--mu:#98a2b3;--bd:#2a3441;--ac:#ff8c5a;--ok:#51cf66;--wn:#ffa94d}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:18px 20px;border-bottom:1px solid var(--bd);background:var(--card)}
+h1{margin:0;font-size:20px}h1 span{color:var(--ac)}header p{margin:2px 0 0;color:var(--mu);font-size:13px}
+nav{display:flex;gap:6px;padding:10px 20px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--bd)}
+nav button{border:1px solid var(--bd);background:none;color:var(--tx);padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+main{max-width:980px;margin:0 auto;padding:18px 16px 40px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat b{display:block;font-size:26px}.stat span{color:var(--mu);font-size:13px}
+h2{margin:0 0 12px;font-size:16px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}th{color:var(--mu);font-weight:600}
+label{display:block;font-size:13px;color:var(--mu);margin-bottom:3px}
+input,select{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.btn{background:var(--ac);color:#fff;border:0;padding:9px 18px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600}
+.btn.s{background:none;color:var(--tx);border:1px solid var(--bd)}
+.tag{padding:2px 9px;border-radius:12px;font-size:12px;font-weight:600;background:var(--bd)}
+.t-p{color:var(--wn)}.t-f{color:var(--ok)}.t-x{color:var(--ac)}
+.bar{height:8px;border-radius:4px;background:var(--bd);overflow:hidden;min-width:80px}.bar i{display:block;height:100%;background:var(--ok)}
+.log{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--mu);white-space:pre-wrap}
+.sdg{font-size:12px;color:var(--mu);text-align:center;margin-top:20px}
+.hide{display:none}
+</style></head><body>
+<header><h1>Relief<span>Link</span> – Disaster Relief Resource Allocation Platform</h1>
+<p>Modular prototype · CO2 · SDG 11: Sustainable Cities &amp; Communities</p></header>
+<nav id="nav"></nav>
+<main id="app"></main>
+<div class="sdg">Modules: Request Intake → Inventory → Allocation Engine → Dashboard/Reports</div>
+<script>
+/* ===== Module 0: Store (state + persistence) ===== */
+const Store=(()=>{
+  const seed=()=>({
+    inventory:{Food:500,Water:800,Medical:120,Blankets:300,Tents:60},
+    requests:[
+      {id:1,area:"Kurla East",type:"Flood",sev:5,people:900,vuln:true,needs:{Food:400,Water:600,Medical:60,Blankets:200,Tents:30},got:{},status:"Pending"},
+      {id:2,area:"Sion",type:"Flood",sev:3,people:300,vuln:false,needs:{Food:150,Water:200,Medical:20,Blankets:80,Tents:10},got:{},status:"Pending"},
+      {id:3,area:"Panvel",type:"Landslide",sev:4,people:450,vuln:true,needs:{Food:250,Water:300,Medical:50,Blankets:120,Tents:25},got:{},status:"Pending"}],
+    next:4,logs:[]});
+  let s;try{s=JSON.parse(localStorage.getItem("rl"))}catch(e){}
+  if(!s)s=seed();
+  const save=()=>{try{localStorage.setItem("rl",JSON.stringify(s))}catch(e){}};
+  return{get:()=>s,save,reset(){s=seed();save()}};
+})();
+
+/* ===== Module 1: Inventory ===== */
+const Inventory={
+  add(item,q){const i=Store.get().inventory;i[item]=(i[item]||0)+q;Store.save()},
+  take(item,q){const i=Store.get().inventory;const t=Math.min(q,i[item]||0);i[item]-=t;return t}
+};
+
+/* ===== Module 2: Request Intake ===== */
+const Requests={
+  add(r){const s=Store.get();r.id=s.next++;r.got={};r.status="Pending";s.requests.push(r);Store.save()}
+};
+
+/* ===== Module 3: Allocation Engine (priority scoring + fair-share) ===== */
+const Engine={
+  score:r=>Math.round(r.sev*20+Math.min(r.people/50,30)+(r.vuln?15:0)),
+  run(){
+    const s=Store.get(),log=[];
+    const pend=s.requests.filter(r=>r.status!=="Fulfilled").sort((a,b)=>Engine.score(b)-Engine.score(a));
+    if(!pend.length)return["No open requests."];
+    const cap={};for(const k in s.inventory)cap[k]=Math.ceil(s.inventory[k]*0.6); // fair-share cap per request
+    log.push("Run at "+new Date().toLocaleTimeString()+" – "+pend.length+" open request(s), ranked by priority score.");
+    for(const r of pend){
+      log.push("\n#"+r.id+" "+r.area+" (score "+Engine.score(r)+")");
+      let full=true;
+      for(const k in r.needs){
+        const need=r.needs[k]-(r.got[k]||0);if(need<=0)continue;
+        const g=Inventory.take(k,Math.min(need,cap[k]));
+        r.got[k]=(r.got[k]||0)+g;if(g<need)full=false;
+        log.push("  "+k+": need "+need+", allocated "+g);
+      }
+      r.status=full?"Fulfilled":"Partial";
+    }
+    s.logs=log;Store.save();return log;
+  }
+};
+
+/* ===== Module 4: UI / Dashboard ===== */
+const tabs=["Dashboard","Requests","Inventory","Allocation"];let tab="Dashboard";
+const $=id=>document.getElementById(id),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const tg=st=>'<span class="tag '+(st==="Fulfilled"?"t-f":st==="Partial"?"t-x":"t-p")+'">'+st+'</span>';
+function pct(r){let n=0,g=0;for(const k in r.needs){n+=r.needs[k];g+=r.got[k]||0}return n?Math.round(g/n*100):0}
+
+const Views={
+Dashboard(){const s=Store.get(),rq=s.requests;
+  const c=x=>rq.filter(r=>r.status===x).length,ppl=rq.reduce((a,r)=>a+r.people,0);
+  const low=Object.entries(s.inventory).filter(([k,v])=>v<50).length;
+  return `<div class="grid">
+  <div class="card stat"><b>${rq.length}</b><span>Total requests</span></div>
+  <div class="card stat"><b>${c("Pending")}</b><span>Pending</span></div>
+  <div class="card stat"><b>${c("Fulfilled")}</b><span>Fulfilled</span></div>
+  <div class="card stat"><b>${ppl}</b><span>People affected</span></div>
+  <div class="card stat"><b>${low}</b><span>Low-stock items</span></div></div>
+  <div class="card"><h2>Priority queue</h2><div class="tw"><table><tr><th>Rank</th><th>Area</th><th>Disaster</th><th>Score</th><th>Coverage</th><th>Status</th></tr>
+  ${[...rq].sort((a,b)=>Engine.score(b)-Engine.score(a)).map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.area)}</td><td>${r.type}</td><td>${Engine.score(r)}</td><td><div class="bar"><i style="width:${pct(r)}%"></i></div></td><td>${tg(r.status)}</td></tr>`).join("")}
+  </table></div></div>
+  <div class="card"><h2>Inventory levels</h2><div class="tw"><table><tr>${Object.keys(s.inventory).map(k=>`<th>${k}</th>`).join("")}</tr><tr>${Object.values(s.inventory).map(v=>`<td>${v}</td>`).join("")}</tr></table></div></div>`},
+Requests(){const inv=Object.keys(Store.get().inventory);
+  return `<div class="card"><h2>New relief request</h2><div class="f">
+  <div><label>Area / location</label><input id="a" placeholder="e.g. Dharavi"></div>
+  <div><label>Disaster type</label><select id="t"><option>Flood</option><option>Earthquake</option><option>Cyclone</option><option>Landslide</option><option>Fire</option></select></div>
+  <div><label>Severity (1–5)</label><select id="v"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option></select></div>
+  <div><label>People affected</label><input id="p" type="number" min="1" value="200"></div>
+  <div><label>Children / elderly present?</label><select id="vu"><option value="1">Yes</option><option value="0">No</option></select></div></div>
+  <h2 style="margin-top:16px">Resources needed</h2><div class="f">${inv.map(k=>`<div><label>${k}</label><input class="n" data-k="${k}" type="number" min="0" value="0"></div>`).join("")}</div>
+  <p><button class="btn" onclick="addReq()">Submit request</button></p></div>
+  <div class="card"><h2>All requests</h2><div class="tw"><table><tr><th>#</th><th>Area</th><th>Type</th><th>Sev</th><th>People</th><th>Status</th><th></th></tr>
+  ${Store.get().requests.map(r=>`<tr><td>${r.id}</td><td>${esc(r.area)}</td><td>${r.type}</td><td>${r.sev}</td><td>${r.people}</td><td>${tg(r.status)}</td><td><button class="btn s" onclick="delReq(${r.id})">Delete</button></td></tr>`).join("")}</table></div></div>`},
+Inventory(){const i=Store.get().inventory;
+  return `<div class="card"><h2>Stock</h2><div class="tw"><table><tr><th>Item</th><th>Available</th><th>Add stock</th></tr>
+  ${Object.entries(i).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td><td><input id="s-${k}" type="number" min="1" placeholder="qty" style="width:90px"> <button class="btn s" onclick="addStock('${k}')">Add</button></td></tr>`).join("")}</table></div></div>`},
+Allocation(){const l=Store.get().logs;
+  return `<div class="card"><h2>Allocation engine</h2><p style="color:var(--mu);margin-top:0">Priority score = severity×20 + population factor (max 30) + 15 if vulnerable groups. Highest score is served first; each request is capped at 60% of current stock so no single area drains the supply (fair-share rule).</p>
+  <button class="btn" onclick="runAlloc()">Run allocation</button> <button class="btn s" onclick="resetAll()">Reset demo data</button></div>
+  <div class="card"><h2>Allocation log</h2><div class="log">${l.length?esc(l.join("\n")):"No allocation run yet."}</div></div>`}
+};
+function addReq(){const a=$("a").value.trim();if(!a)return alert("Enter an area");
+  const needs={};document.querySelectorAll(".n").forEach(e=>{if(+e.value>0)needs[e.dataset.k]=+e.value});
+  if(!Object.keys(needs).length)return alert("Enter at least one resource");
+  Requests.add({area:a,type:$("t").value,sev:+$("v").value,people:+$("p").value||1,vuln:$("vu").value==="1",needs});render()}
+function delReq(id){const s=Store.get();s.requests=s.requests.filter(r=>r.id!==id);Store.save();render()}
+function addStock(k){const q=+$("s-"+k).value;if(q>0){Inventory.add(k,q);render()}}
+function runAlloc(){Engine.run();render()}
+function resetAll(){Store.reset();render()}
+function render(){$("nav").innerHTML=tabs.map(t=>`<button class="${t===tab?"on":""}" onclick="tab='${t}';render()">${t}</button>`).join("");$("app").innerHTML=Views[tab]()}
+render();
+</script></body></html>
